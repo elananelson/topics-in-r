@@ -1,0 +1,226 @@
+---
+title: "Homework 4"
+author: "Elana Nelson"
+date: "April 22, 2019 at 11:59pm"
+output:
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(results = 'asis',      
+               comment = NA,
+               prompt = FALSE,
+               cache = FALSE,
+               warning = FALSE,
+               message = FALSE,
+               echo=FALSE)
+
+library(dplyr)
+library(tidyr)
+library(broom)
+library(ggplot2)
+library(knitr)
+```
+We consider in this homework the relationship of cardiometabolic risk factors with the occurrence of colorectal cancer in the Physicians' Health Study.  The data contain information on 13 variables in a sample of 16,018 participants in the Physicians' Health Study.  These participants were randomized in 1982-1983 and followed until they died, dropped out, developed colorectal cancer, or until 12/31/1995.  
+
+Variables are: 
+
+
+
+-----------------------------------------------------------
+Name        Description
+----------- -------------------------------------------
+age         Age in years at time of Randomization
+
+asa         0 - placebo, 1 - aspirin
+
+bmi         Body Mass Index (kg/$m^2$)
+
+hypert      1 - Hypertensive at baseline, 0 - Not
+
+alcohol     0 - less than monthly, 1 - monthly to less than daily, 2 - daily consumption
+
+dm          0 = No diabetes Mellitus, 1 - diabetes Mellitus
+
+sbp         Systolic BP (mmHg)
+
+exer        0 - No regular, 1 - Sweat at least once per week
+
+csmoke      0 - Not currently, 1 - < 1 pack per day, 2 - $\ge$ 1 pack per day
+
+psmoke      0 - never smoked, 1 - former < 1 pack per day, 2 - former $\ge$ 1 pack per day
+
+pkyrs       Total lifetime packs of cigarettes smoked
+
+crc         0 - No colorectal Cancer, 1 - Colorectal cancer
+
+cayrs       Years to colorectal cancer, or death, or end of follow-up.
+------------------------------------------------------------------------
+
+
+```{r}
+suppressMessages(library(foreign))
+phscrc <- read.dta("phscrc.dta")
+
+```
+
+
+**1. Fit a Poisson regression model that predicts the incidence of CRC with the following independent variables: continuous age, continuous SBP, pack-years of cigarettes consumed, continuous BMI and an indicator of diabetes mellitus.  Provide interpretation of the relationship of SBP with rates of CRC from this model, based on comparison of the adjusted relative rate in two men differing by 10 mmHg, with a relevant 95% confidence interval.**
+
+```{r prob1}
+
+fit1 <- glm(crc~age + sbp + pkyrs + bmi + dm + offset(log(cayrs)), data=phscrc, family=poisson(link='log'))
+kable(tidy(fit1, exponentiate = TRUE, conf.int = TRUE)[-1,])
+
+```
+
+For two men of the same age, pack years, bmi, and diabetes mellitus status, a 10 mmHg increase in sbp yiels a 10% increase in rate of CRC (1% increase for 1 mmHg increase). The confidence interval for this estimate is also relatively small suggesting a good estimate.
+
+
+**2. Obtain and plot Kaplan-Meier estimates of the probability of developing CRC among those with and without elevated SBP ($\ge$ 140 mmHg).  Give estimated probabilities of developing CRC at 1, 5, and 10 years in each SBP group.**
+
+```{r prob2}
+
+library(survival)
+
+phscrc$sbp.high <- as.numeric(phscrc$sbp >= 140)
+
+crc.surv <- survfit(Surv(cayrs, crc) ~ sbp.high , data=phscrc) 
+
+suppressMessages(library(survminer))
+ggsurvplot(crc.surv, conf.int = TRUE, risk.table = TRUE, risk.table.col="strata",
+           legend.labs = c("Non-Elevated SBP", "Elevated SBP"),break.time.by=5)
+
+survival1 <- summary(crc.surv, time = 1)$surv
+survival5 <- summary(crc.surv, time = 5)$surv
+survival10 <- summary(crc.surv, time = 10)$surv
+
+survival <- rbind(survival1,survival5,survival10)
+colnames(survival) <- c("Non-Elevated SBP Survival", "Elevated SBP Survival")
+rownames(survival) <- c("1 year", "5 years", "10 years")
+kable(as.data.frame(survival), caption = "Estimated probabilities of developing colorectal cancer at different times")
+```
+
+As we can see from the plot of the Kaplan-Meier estimates over time, not many people are developing CRC. As a result, the plot is very concentrated near a probability of survival = 1. 
+
+Furthermore, the direct output of survival by sbp group at different time steps also shows that in both groups, not only arre the survival rates similar but also very close to 1.
+
+
+**3. In question 2, you compared the probability of developing colorectal cancer at 3 different follow-up times (1, 5, and 10 years) between men with and without elevated SBP ($\ge$ 140 mmHg).  Continue with this same dichotomous exposure variable, and perform the log-rank test to compare the hazard of colorectal cancer between the two groups of men.  Make sure you state the null and alternative hypotheses.**
+
+The null hypothesis of the log-rank test is that there is no true difference between the two groups, while the alternative hypothesis supports a significant difference between the two groups. 
+
+```{r, prob3}
+
+#Model the cumulative hazard
+crc.haz <- survfit(Surv(cayrs, crc) ~ sbp.high , data=phscrc, type = "fleming")
+
+ggsurvplot(crc.haz, conf.int = TRUE,
+           risk.table = TRUE, risk.table.col = "strata",
+           fun = "cumhaz", legend.labs = c("Non-Elevated SBP", "Elevated SBP"))
+
+#Perform log-rank test
+survdiff(Surv(cayrs, crc)~sbp.high, data=phscrc)
+
+
+```
+
+Our plot of the cumulative hazard indicates that the groups could be significantly different, as their cofidence intervals are not overlapping too much. Furthermore, they are not completely straight lines, indicating that Kaplan-Meier is a sound method to use. We can further test the difference between the two groups with a log rank test, shown above. By the log-rank test, we have a significant difference in the rate of developing crc by those men with or without elevated SBP.
+
+**4. Older age is a powerful risk factor for colorectal cancer that also influences SBP, and is therefore a probable confounder.  Form  four age groups  (40-49, 50-59, 60-59, and 70-84 years) and perform a stratified log-rank test of whether elevated SBP ($\ge$ 140 mmHg) is related to the hazard of colorectal cancer, adjusted for age.**
+
+```{r, prob4}
+
+phscrc <- phscrc %>%
+            mutate(age.cat = cut(age, c(40,50,60,70,84), right=FALSE)) 
+
+survdiff(Surv(cayrs, crc)~sbp.high + strata(age.cat), data=phscrc)
+  
+```
+
+When adjusting for age, the log-rank test shows that the two groups are still significantly different (p-value = 0.02). Thus, there is a significant difference in the hazard of developing colorectal cancer between those people with elevated or non-elevated SBP, adjusted for age. 
+
+**5. Evaluate the shape of the relationship of SBP with rates of CRC, *adjusting for age* in a cox proportional hazards model.  You can use either continuous age or the four categories described above. Create 4 models:**
+
+- **Model 1**: Use continuous SBP (We will refer to this as the simple linear model)
+- **Model 2**: Use clinical cutpoints of SBP (<120, 120-129, 130-139, $\ge$ 140 mmHg)
+- **Model 3**: Quartiles of the distribution
+- **Model 4**: Linear plus quadratic term of SBP.  
+
+**Does a simple linear model (on the log scale) adequately describe the relationship controlling for age?  You can use Likelihood Ratio tests to compare Models 2-4 vs Model 1. **
+
+```{r, prob5}
+
+library(Hmisc)
+
+#create a survival object in the data
+phscrc$SurvObj <- with(phscrc, Surv(cayrs, crc))
+
+#create clinical cutpoints of sbp in the data
+phscrc <- phscrc %>%
+            mutate(sbp.cat = cut(sbp, c(0,120,130,140,200), right=FALSE, include.lowest = TRUE)) 
+
+#create quartile cuts of sbp in the data
+phscrc <- phscrc %>%
+            mutate(sbp.quart = cut2(sbp, g = 4)) 
+
+mod1 <- coxph(SurvObj~sbp + age, data=phscrc)
+mod2 <- coxph(SurvObj~sbp.cat + age, data=phscrc)
+mod3 <- coxph(SurvObj~sbp.quart + age, data=phscrc)
+mod4 <- coxph(SurvObj~sbp + sbp^2 + age, data=phscrc)
+tidy1 <- tidy(mod1, exponentiate=T)[,-c(3,4)]
+tidy2 <- tidy(mod2, exponentiate=T)[,-c(3,4)]
+tidy3 <- tidy(mod3, exponentiate=T)[,-c(3,4)]
+tidy4 <- tidy(mod4, exponentiate=T)[,-c(3,4)]
+kable(bind_rows(tidy1, tidy2, tidy3, tidy4), digits = 3)
+
+lrt <- anova(mod1, mod2, mod3, mod4, test = "Chisq")
+kable(lrt)
+
+
+```
+
+Considering the table of 4 models (note that the cutoff for each model is at each successive age predictor), we see that age is significant across each model, meaning it is good that we adjusted for it. Each model (2-4) is nested within model 1, but just larger. Thus, we can test for a significant difference between these models with a likelihood ratio test, shown above. By the likelihood ratio test, we see that model 3 (sbp quartiles) is the only model that is significantly different from the reference model (simple linear model). In particular, model 3 is significantly *better* than model 1. 
+
+**6. Which graphical approaches can you use to evaluate whether the assumptions of the proportional hazards appear to hold?  Obtain these graphs and briefly interpret them.**
+
+Again, we refer to our plot of cumulative hazards for each group. If a straight line could be fit to this plot, then we could settle with a different model (perhaps poisson). If the groups are clearly not straight, then Kaplan-Meier survival model is a good way to go. 
+
+```{r prob6}
+
+ggsurvplot(crc.haz, conf.int = TRUE,
+           risk.table = TRUE, risk.table.col = "strata",
+           fun = "cumhaz", legend.labs = c("Non-Elevated SBP", "Elevated SBP"))
+
+```
+
+The two groups in this cumulative hazards plot are relatively straight, indicating that the cumulative hazard could be constantly increasing (derivative is constant), suggesting that an alternative model could be used (such as poisson). However, they are not completely straight, indicating that a survival model could also be used because the hazard is increasing over time. This moreso applies to the Elevated SBP group, which seems to have a cumulative hazard that is increasing more and more over time. The non-elevated SBP group seems pretty consistent. We can then check our proportional hazards assumption for the created survival model.
+
+Under the proportional hazards assumption, we should see that log(-log()) of our Kaplan-Meier estimates from our original survival model are parallel over time. 
+
+```{r}
+
+ggsurvplot(crc.surv,      
+      legend.labs = c("Non-Elevated SBP", "Elevated SBP"),break.time.by = 5, 
+            fun="cloglog")
+
+```
+
+We see that our two estimates eventually become relatively parallel, however there is a lot of overlapping in our groups, which is definitely not supportive of a proportional hazard model. We should use a hypothesis test next to check for proprtional hazards.
+
+**7. Perform a hypothesis test to evaluate the proportional hazards assumption.**
+
+The test will be performed on model 3, with SBP quartile groups, as it was previously shown to be a better fit of the data.
+
+```{r prob7}
+
+cox.hypoth <- cox.zph(mod3)
+kable(as.data.frame(cox.hypoth$table))
+
+```
+
+The table above shows only insignificant p values for all predictors in the model, meaning that we can reject the alternative hypothesis in favor of the null hypothesis that the hazard rate over time for the individuals are relatively constant. Our proportional hazards assumption holds, indicating that the use of a Cox Proportional Hazards model is sound.  
+
+
+

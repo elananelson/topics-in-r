@@ -1,0 +1,174 @@
+---
+title: "Problem Set 3"
+author: "Elana Nelson"
+date: "April 8, 2019"
+output: pdf_document
+---
+
+Health disparities are very real and exist across individuals and populations. Before developing methods of remedying these disparities we need to be able to identify where there are disparities.In this homework we will consider a study by [(Asch & Armstrong, 2007)](http://www.ncbi.nlm.nih.gov/pubmed/17513818).  This paper considers 222 patients with localized prostate cancer. The table below partitions patients by race, hospital and whether or not the patient received a prostatectomy.
+
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(results = 'asis',      
+               comment = NA,
+               prompt = FALSE,
+               cache = TRUE,
+               warning = FALSE,
+               message = FALSE,
+               echo=FALSE)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(broom)
+library(ggplot2)
+library(knitr)
+library(stargazer)
+library(caret)
+```
+
+```{r}
+cancer_data <- read.table("https://drive.google.com/uc?export=download&id=0B8CsRLdwqzbzOXlIRl9VcjNJRFU", header=TRUE, sep=",")
+
+cancer_data <- uncount(cancer_data, number)
+```
+
+This dataset contains the following variables
+
+---------------------------------------------
+Variable      Description
+------------  -------------------------------
+hospital      0 - University Hospital
+
+              1 - VA Hospital
+
+race          0 - White
+
+              1 - Black
+              
+surgery       0 - No prostatectomy
+
+              1 - Had Prostatectomy
+---------------------------------------------
+
+###1. First, use logistic regression to obtain a crude estimate (i.e. collapsed over hospital) of the relationship of Black vs White men in Philadelphia with risk of receiving a prostatectomy. You can use the odds ratio for this purpose. Report the odds ratio, a 95% confidence interval and provide a brief interpretation. 
+
+```{r q1}
+
+mod1 <- glm(surgery ~ race, data=cancer_data, family=binomial(link = "logit"))
+kable(tidy(mod1, conf.int = T, exponentiate = T)[,-c(3:4)])
+
+```
+
+By this model, we see that a unit increase in race (meaning from white to black) results in a `r (exp(mod1$coefficients[2])-1)*100`% decrease in odds of receiving a prostatectomy.
+
+###2. Second, use logistic regression to obtain a crude estimate (i.e. collapsed over race) of the relationship of VA hospital vs University Hospital in Philadelphia with risk of receiving a prostatectomy. You can use the odds ratio for this purpose. Report the odds ratio, a 95% confidence interval and provide a brief interpretation.  
+
+```{r q2}
+
+mod2 <- glm(surgery ~ hospital, data=cancer_data, family=binomial(link = "logit"))
+kable(tidy(mod2, conf.int = T, exponentiate = T)[,-c(3:4)])
+
+```
+
+By this model, we see that a unit increase in hospital (meaning from University to VA) results in a `r (exp(mod2$coefficients[2])-1)*100`% decrease in odds of receiving a prostatectomy.
+
+###3. Thirdly, use logistic regression to obtain an estimate of the relative odds of prostatectomy by race adjusted for hospital. Report the relative odds ratio, a 95% confidence interval and provide a brief interpretation for race. 
+
+```{r q3}
+
+mod3 <- glm(surgery ~ race + hospital, data=cancer_data, family=binomial(link = "logit"))
+kable(tidy(mod3, conf.int = T, exponentiate = T)[,-c(3:4)])
+
+```
+
+We now see that not only is the odds ratio very close to 1 (suggesting no change by race), but it is also insignificant (again suggesting no change by race). This implies that race is not very important in explaining the odds of recieving a prostatectomy. In fact, it is the hospital that is chosen that has a statistically significant effect on the outcome. The confidence interval for hospital has also not increased by very much, and the estimate has remained the same, sugggesting this is a good estimate for the effects of hospital choice. 
+
+###4. How did the odds ratio change between questions 1 and 3? (***Hint:*** *Simpson's Paradox*)
+When viewed individually, each subgroup (race and hospital) was associated with a significant odds ratio, both showing a significant % decrease in odds of receiving a prostatectomy with one unit inccrease in category. However, when viewed together, race was left insignificant, and hospital became the most important variable on the outcome. This ocurrence is similar to Simpson's Paradox, in which, when viewed all together, one subgroup dominates the other subgroups. 
+
+###5. Why is there such a change in the odds ratio between 1 and 3?
+There is such a change because when viewed separately, both race and hospital choice have a significant effect on the outcome, but when viewed together, hospital choice has a more overwhelming effect on the outcome. 
+
+
+###6. Consider adding an interaction between race and hospital into the model. Perform an appropriate model comparison test and choose the appropriate model. 
+
+```{r q6a}
+
+mod6 <- glm(surgery~race*hospital, data = cancer_data, family = binomial(link="logit"))
+kable(tidy(mod6, conf.int = T, exponentiate = T)[,-c(3:4)])
+
+```
+
+For understanding the different components in the interaction model:
+(Intercept) -> White men in University Hospital
+race -> Black men in University Hospital
+hospital -> White men in VA Hospital
+race:hospital -> Black men in VA Hospital
+
+Because the interaction term is insignificant, we should just use the smaller trend model. However we can test this with a Likelihood Ratio Test.
+
+```{r q6b}
+
+lrt <- anova(mod3, mod6, test = "Chisq")
+kable(tidy(lrt))
+
+```
+
+The p-value of this test suggests that we should favor the null hypothesis, meaning that the larger model with the interaction term is no better than the smaller model. Thus, we should go with the smaller adjusted model.
+
+###7. Perform a Hosmer-Lemeshow Test for this this. Describe what this is testing as well as stating the results. 
+
+```{r q7}
+library(ResourceSelection)
+
+hoslem.test(mod3$y, fitted(mod3), g=3)
+
+```
+
+*Note:* Some suggest that "using a small value of g ought to give less opportunity to detect mis-specification. However, if we choose g to large, the numbers in each group may be so small that it will be difficult to determine whether differences between observed and expected are due to chance or indicative of model mis-specification". As a result, it is suggested that g > p+1, where p is our number of predictors. 
+
+The Hosmer-Lemeshow test is a test of calibration. It determines whether or not our predicted probabilities fit the distribution of the data. Because our p-value is very high (in fact, it is 1 which is odd), we can reject the alternative hypothesis in favor of the null hypothesis, meaning that our model is correct.  
+
+###8. Test for discrimination in the Logistic model. 
+
+To test for discrimination, we consider the area under the Receiver Operating Characteristic (ROC) curve, or the AUC. 
+
+| AUC | Model Fit | 
+| ---- | -------- | 
+| 0.5 | Random |
+| 0.6 | Mediocre | 
+| 0.7 | Decent | 
+| 0.8 | Good | 
+| 0.9 | Excellent | 
+
+```{r q8, fig.align="center", fig.width=4, fig.height=4}
+
+library(ggplot2)
+library(ROCR)
+prob <- predict(mod3)
+pred <- prediction(prob, cancer_data$surgery)
+perf <- performance(pred, "tpr", "fpr")
+# I know, the following code is bizarre. Just go with it.
+auc <- performance(pred, measure = "auc")
+auc <- auc@y.values[[1]]
+roc.data <- data.frame(fpr=unlist(perf@x.values),
+                       tpr=unlist(perf@y.values),
+                       model="GLM")
+ggplot(roc.data, aes(x=fpr, ymin=0, ymax=tpr)) +
+    geom_ribbon(alpha=0.2) + geom_abline(intercept = 0, slope = 1, colour = "gray")+
+    geom_line(aes(y=tpr)) +
+    ggtitle(paste0("ROC Curve w/ AUC=", auc))
+
+```
+
+We see that the AUC is about 0.66, which implies a mediocre fit, but not awful. This means that this is not as discriminatory as would be ideal (AUC of 1).
+
+###9. What does this model tell you about disparities within this study?
+
+The significant components in the model suggest that the disparity lies within the choice of hospital. When viewed individually, both race and hospital choice played a significant role in the outcome of receiving a prostatectomy. However, when viewed together, as is done in this model, we see that hospital choice plays the most significant role. Furthermore, since both the calibration and discrimination tests of this model suggest a decent fit, all evidence suggests that the biggest disparity is in hospital choice. However, due to the significant change in model statistics, this suggests that there is high collinearity between race and hospital choice, implying a relationship between the two variables. In other words, hospital choice may be influenced by race. 
+
+###10. What challenges does this study provide in trying to identify health disparities?
+
+One challenge is the very few number of predictors included in the study. In my opinion, identifying health disparities means analyzing a process with many different layers and relationships and interactions between a wealth of identifying variables including hospital, race, age, health, etc. 
+

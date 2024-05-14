@@ -1,0 +1,164 @@
+---
+title: "Problem Set 1"
+author: "Elana Nelson"
+date: "February 14, 2019"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+  word_document: default
+---
+*For this assignment we will be considering data from "Comic Books are Still Made By Men, For Men and About Men"*
+```{r setup, echo=FALSE, message=FALSE}
+library(dplyr)
+library(tidyr)
+library(broom)
+library(knitr)
+library(ggplot2)
+library(forcats)
+library(fivethirtyeight)
+
+```
+
+##Questions
+
+**1. We will evaluate the number of appearances as the outcome. Create a plot to display the distribution of this variable. Then interpret the graph and note the normality, skewness and anything else you notice about this.**
+
+```{r prob1, echo=FALSE}
+
+ggplot(comic_characters, aes(x= appearances)) +
+  ggtitle("Distribution of Number of Appearances") +
+  geom_histogram(fill = "lightgreen",color="darkgreen", binwidth = 15) +
+  xlab("Number of Appearances") +
+  xlim(0,1000) +
+  ylim(0, 4500)
+  
+```
+
+
+This graph is clearly heavily right skewed, with the majority falling in between 0 and 125 appearances. So obviously this is not a normal distribution. However, it is worth noting that although the majority has a relatively small number of appearances, the data ranges to upwards of 4000 appearances. 
+
+
+**2. Hopefully you noted that this was not normally distributed so the next step would be to consider a log transform of this variable. Use the mutate() function to add a variable log_app which is the log of the appearances. Then create the same distribution plot above for log_app.**
+
+```{r prob2, echo = FALSE}
+
+comic_characters <- comic_characters %>%
+  mutate(log_app = log(appearances))
+
+ggplot(comic_characters, aes(x= log_app)) +
+  ggtitle("Distribution of Log of Number of Appearances") +
+  geom_histogram(fill = "lightgreen",color="darkgreen", binwidth = 1) +
+  xlab("Number of Appearances w/ Log Transformation") +
+  xlim(0,10)
+  
+
+```
+
+
+The log of appearances definitely has a more strongly normal distribution, however it is still not standard and maintains its right-skewdness.
+
+
+**3. We will now consider the variable sex in the dataset. Make a table of counts of how many characters are in each group. You can use tally() or count() for this. Comment on what you notice about these groups.**
+
+```{r prob3, echo = FALSE}
+library(dplyr)
+library(tidyr)
+
+table3 <- kable(comic_characters %>%
+  group_by(sex) %>%
+  count())
+table3
+
+
+```
+
+
+As the title of the overhanging story suggests, there are majority male characters found in comic books. After that, we see a majority female characters and then relatively very small amounts of queer characters such as agender, genderfluid, genderless, and transgender characters. There is also a substantial amount of NAs, or characters with no recorded gender. This may be due to just incompleteness in the data.
+
+
+**4. Run an ANOVA considering log_app over the different genders (sex). Are the appearances different by gender (sex)? Do you think ANOVA is appropriate across all these categories? Why or Why not?**
+
+```{r prob4, echo = F}
+tidy(aov(log_app~sex, comic_characters))
+```
+
+
+Since the pvalue is very effectively zero with a significance of 10^-33, it can be determined that appearances differ by gender. However, the use of ANOVA may not be appropriate across all categories of this variable, specifically those that have little to no variance (as is the case with the number of transgender, genderless, genderfluid, and agender characters).
+
+
+**5. PHP 2511 Only**
+
+
+**6. Using mutate() and fct_relevel() create a new variable called gender with three categories:
+- male
+- female
+- non-binary**
+
+```{r prob6, echo = F}
+
+comic_characters <- comic_characters %>%
+  mutate(gender = fct_recode(sex, 
+                             "Male" = "Male Characters",
+                             "Female" = "Female Characters",
+                             "Non-Binary" = "Genderfluid Characters",
+                             "Non-Binary" = "Genderless Characters",
+                             "Non-Binary" = "Agender Characters",
+                             "Non-Binary" = "Transgender Characters"))
+
+comic_characters <- comic_characters %>%
+  mutate(gender = fct_relevel(gender, "Male", "Female", "Non-Binary"))
+
+table6 <- kable(comic_characters %>%
+                  group_by(gender) %>%
+                  count())
+table6
+
+
+```
+
+
+**7. Run an ANOVA considering log_app over the new gender variable. Are there differences between your three gender categories?**
+
+```{r prob7, echo = F}
+
+aov7 <- aov(log_app~gender, comic_characters)
+
+tidy_aov7 <- tidy(aov7)
+tidy_aov7
+
+```
+
+
+This ANOVA also yields an extremely small pvalue, indicating that there are definitely differences between the three gender categories. It is more appropriate in this case because it considers the log of appearances, yielding similar variances.
+
+**NOTE:**If we wanted to determine if there was a significant difference between only two groups, we could just go ahead and use a t test. In this case, with 2+ groups, we use ANOVA to determine if there is a difference (with the F statistic) and if that difference is statistically significant (with the p value). Once a significant difference amongst the group is determined with ANOVA, we can then use a "Post HOC test" (TukeyHSD) to determine which categories are statistically significantly different from each other.
+
+
+**8. Using TukeyHSD() perform p-value adjusted t-tests to compare each category of gender. What groups are different than the others?**
+
+```{r prob8, echo =F}
+
+tidy(TukeyHSD(aov7, "gender"))
+
+
+```
+
+
+According to this post hoc test, the most statistically significant difference is between the female and male characters (perhaps because there is more complete data for these two categories). However, the comparison that had the most difference (highest estimate) was between the non-binary and male characters. There is no significant difference between non-binary and female characters.
+
+
+**9. Interpret the overall results of this ANOVA. What does this tell you about appearances and gender?**
+
+```{r prob9, echo =F}
+
+plot(TukeyHSD(aov7, "gender"))
+
+```
+
+
+Overall, the ANOVA test indicates that there are statistically significant differences between males and females, and between males and non-binary people. The comparison between males and females is more precise than other categorical comparisons, as is visualized in the relatively small confidence interval shown above. This may be due to the fact that there was a much higher sample size for both counts of male and female characters. Although the estimation of the difference bwtween males and females was the most precise, the estimation of the difference between males and non-binary people was the highest. The confidence interval is likely so large due to the lack of data on non-binary characters. The confidence interval for the comparison between non-binary and female characters includes the null hypothesis, and is thus there is no statistically significant difference between them. 
+
+
+**10. PHP 2511 Only**
+

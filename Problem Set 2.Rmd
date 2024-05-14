@@ -1,0 +1,313 @@
+---
+title: "Problem Set 2"
+author: "Elana Nelson"
+date: "March 4, 2019"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+
+library(readxl)
+library(dplyr)
+library(tidyr)
+library(broom)
+library(ggplot2)
+library(summarytools)
+library(skimr)
+library(DescTools)
+library(knitr)
+library(data.table)
+library(stargazer)
+
+opts_chunk$set(results = 'asis',      
+                comment = NA, 
+                prompt = FALSE, 
+                cache = FALSE,
+               warning = FALSE,
+               message = FALSE)
+
+ library(summarytools)
+ st_options(plain.ascii = FALSE,       
+            style = "rmarkdown",       
+            footnote = NA,             
+            subtitle.emphasis = FALSE  
+ ) 
+```
+
+#Model Building
+
+The data considers different factors of low birth weight. The goal is to build a model to predict birth eight.
+
+**1. We begin by using number summaries and graphs to explore relationships of variables in the data set and birthweight, bwt.**
+```{r}
+
+low.weight <- read.table("https://drive.google.com/uc?export=download&id=0B8CsRLdwqzbzMzJyVkt5QkdvVnM", header=TRUE, sep=",")
+
+stargazer(low.weight[,c("age", "lwt", "ftv", "bwt")], 
+          covariate.labels = c("Age of Mother (lbs)", "Weight at Last Menstraul Period", "Physician Visits in First Trimester", "Birthweight of Baby (grams)"), header = F)
+
+
+```
+
+We can also visualize the birthweight outcomes of the babies with a histogram.
+
+```{r, fig.width=4.5, fig.height=4, fig.align='center'}
+
+ggplot(low.weight, aes(x=bwt)) +
+  geom_histogram(color="black", fill="darkgreen",binwidth = 100) +
+  ggtitle("Birthweight Outcomes") +
+  xlab("Birthweight (in grams)") 
+
+```
+
+We also have different indicator variables including whether or not the birthweight is considered low, race, smoking habits, premature labors, history of hypertension, and presence of uterine irritability. We can get a general overview of these variables with a frequency table.
+
+```{r, message=F}
+library(epiDisplay)
+
+kable(tab1(low.weight$low, graph = F))
+kable(tab1(low.weight$race, graph=F))
+kable(tab1(low.weight$smoke, graph = F))
+kable(tab1(low.weight$ptl, graph = F))
+kable(tab1(low.weight$ht, graph = F))
+kable(tab1(low.weight$ui, graph = F))
+
+```
+
+
+And now we visualize relationships between different variables and birthweight. 
+
+```{r, fig.width=3, fig.height=2.5}
+
+plot(low.weight$age,low.weight$bwt, main="Age VS Birthweight")
+plot(low.weight$lwt, low.weight$bwt, main="Mother Weight VS Birthweight")
+
+```
+The plots of age of mother vs birthweight do not initially show a clear relationship. The same is true for mother weight vs birthweight. 
+
+We now look at the relationship between birthweight and the different indicator variables including race, premature labors, smoking habits, history of hypertension, and history of uterine irritability.
+
+```{r, fig.width=2.5, fig.height=2.5}
+
+ggplot(low.weight, aes(as.factor(race), bwt)) + geom_boxplot()  + 
+  xlab("Race") + ylab("Birthweight (grams)")
+
+ggplot(low.weight, aes(as.factor(smoke), bwt)) + geom_boxplot()  + 
+  xlab("Smoking Habits") + ylab("Birthweight (grams)")
+
+ggplot(low.weight, aes(as.factor(ht), bwt)) + geom_boxplot()  + 
+  xlab("History of Hypertension") + ylab("Birthweight (grams)")
+
+ggplot(low.weight, aes(as.factor(ptl), bwt)) + geom_boxplot()  + 
+  xlab("Premature Labors") + ylab("Birthweight (grams)")
+
+ggplot(low.weight, aes(as.factor(ui), bwt)) + geom_boxplot()  + 
+  xlab("Uterine Irritability") + ylab("Birthweight (grams)")
+
+
+
+```
+
+The above density graphs show the relationship between birthweight and various characteristics of the mother:
+* It appears that Black women tend to have lower birthweight babies compared to both the White and other category
+* Smokers tend to have lower birthweight babies than non smokers
+* Those with a history of hypertension tend to have lower birthweight babies than those without.
+
+**2. We now need to make sure that our low, race, and ui variables are factors with correct names.**
+
+```{r}
+low.weight$low = factor(low.weight$low)
+levels(low.weight$low) <- c("Normal", "Low")
+
+low.weight$race = factor(low.weight$race)
+levels(low.weight$race) <- c("White", "Black", "Other")
+
+low.weight$ui = factor(low.weight$ui)
+levels(low.weight$ui) <- c("No", "Yes")
+```
+
+**3. We now begin model building by looking at simple linear regressions for each of the 8 predictor variables. We will also examine relevant plots and create a nice combined table of summary stats.**
+
+```{r}
+
+fit1 <- lm(bwt ~ age, low.weight)
+fit2 <- lm(bwt ~ lwt, low.weight)
+fit3 <- lm(bwt ~ factor(race), low.weight)
+fit4 <- lm(bwt ~ smoke, low.weight)
+fit5 <- lm(bwt ~ ptl, low.weight)
+fit6 <- lm(bwt ~ ht, low.weight)
+fit7 <- lm(bwt ~ ui, low.weight)
+fit8 <- lm(bwt ~ ftv, low.weight)
+
+f1 <- tidy(fit1, conf.int = T)[-1, -c(3:4)]
+f2 <- tidy(fit2, conf.int = T)[-1, -c(3:4)]
+f3 <- tidy(fit3, conf.int = T)[-1, -c(3:4)]
+f4 <- tidy(fit4, conf.int = T)[-1, -c(3:4)]
+f5 <- tidy(fit5, conf.int = T)[-1, -c(3:4)]
+f6 <- tidy(fit6, conf.int = T)[-1, -c(3:4)]
+f7 <- tidy(fit7, conf.int = T)[-1, -c(3:4)]
+f8 <- tidy(fit8, conf.int = T)[-1, -c(3:4)]
+
+mod_table <- rbind(f1,f2,f3,f4,f5,f6,f7,f8)
+kable(mod_table, digits = 4, 
+      col.names = c("Variable", "Estimate", "p-Value", "Conf.Low", "Conf.High"))
+
+
+```
+
+###Graphically
+```{r, fig.width=3, fig.height=3}
+
+ggplot(low.weight, aes(age, bwt)) + 
+  geom_point() + 
+  geom_smooth(method="lm", se=FALSE) + 
+  xlab("Age of Mother") + 
+  ylab("Birthweight") +
+  ggtitle("Birthweight VS Age of Mother")
+
+ggplot(low.weight, aes(lwt, bwt)) + 
+  geom_point() + 
+  geom_smooth(method="lm", se=FALSE) + 
+  xlab("Weight of Mother") + 
+  ylab("Birthweight") +
+  ggtitle("Birthweight VS Weight of Mother")
+
+```
+
+- The plot of age vs birthweight shows a weak relationship, as is confirmed by the summary table showing that age is insignificant to the outcome. 
+
+- The plot of weight of mother vs birthweight shows a slightly positive relationship. The p value of this relationship shows that this relationship is significant
+
+
+**4. Commenting on significance of variables**
+
+Considering the pvalues of each simple relationship, it can be determined that the following variables may be significant to the outcome:
+
+* Weight of Mother (lwt)
+* Race, Black
+* Race, Other
+* Smoking Habits (smoke)
+* Number of Premature Labors (ptl)
+* History of Hypertension (ht)
+* Uterine Irritability (ui)
+
+It is worth noting however that the intercept of age of mother and weight of mother is at zero, and it may make more sense to mean-center these to better understand their influence on the outcome.
+
+**5. Explore the possibility of interaction between smoking and race. Display a graph that would allow you to explore this and then run a regression with the interaction term. Interpret the results of this model.**
+
+There is a helpful interaction function that can help us generate an interaction term between two categorical variables. 
+There is also an interaction plot built into r that will be helpful for visualizing relationships. 
+
+```{r}
+
+kable(with(low.weight, tapply(bwt, list(race, smoke), mean)), col.names = c("Nonsmoker", "Smoker"))
+
+```
+
+We can see with this cross tabulation table that there is an interaction between race and smoking habits. The mean of the outcome, birthweight, decreases for each race from white in different amounts depending on smoking habits. We can also visualize these interactions with an interaction plot.
+
+```{r}
+
+interaction.plot(x.factor = low.weight$smoke, trace.factor = low.weight$race, response = low.weight$bwt, trace.label = "Race", xlab = "Smoking Habits", ylab="Mean of Birthweight", col = "darkgreen")
+
+
+```
+
+This interaction plot shows us that there is evidence of an interaction based on the crossing of the lines. We at this point should run a regression with the interation term. We can create an interaction term with the interaction function. 
+
+```{r}
+
+low.weight$interaction <- interaction(low.weight$race, low.weight$smoke)
+
+interaction_mod <- lm(bwt~interaction, low.weight)
+kable(tidy(interaction_mod))
+
+```
+
+According to the model, every interaction term is statistically significant and results in a large decrease in birthweight from the intercept (white, nonsmokers). There is a very large decrease in birthweight for Black nonsmokers. 
+
+**6. Build a multiple regression model with what you have found in problems 4 and 5. Do the coefficients change from the simple regressions? Comment on both direction and magnitude changes.**
+
+Considering the significance of the simple linear regression, and the significance of the interaction term, we can build a multiple regression model that includes the variables that remained significant to the outcome, including:
+* Weight of Mother (lwt)
+* Race, Black
+* Race, Other
+* Smoking Habits (smoke)
+* Number of Premature Labors (ptl)
+* History of Hypertension (ht)
+* Uterine Irritability (ui)
+* Interaction 
+
+```{r}
+
+mult_mod <- lm(bwt~lwt + ptl + ht + ui + interaction, low.weight)
+kable(tidy(mult_mod))
+```
+
+Let's now compare this multiple regression model to the simple linear regressions found earlier.
+
+```{r}
+
+kable(mod_table)
+
+```
+
+The most interesting difference between these two models is the drastic change in the effect of the count of premature labors. In the simple linear model it had a much greater negative effect on the outcome than in the multiple regression model. This may be due to interactions with the other variables, or that other variables are able to explain the outcome better in the multiple regression model. The count of premature labors also becomes insignificant in the multiple regression model. The inclusion of interaction terms may explain the outcome including premature labors, thus making ptl insignificant. 
+
+**7. Use the plots we have identified to check the model fit.**
+  **a. Are the assumptions of linear regression met by this?**
+  **b. How does this model fit?**
+  **c. Comment on if you see any possible outliers or collinearity**
+  
+To begin checking model fit, we must first address the underlying assumptions of linear regression - the residuals are random, and normally distributed about zero with homogeneous variance. We can test this with a standardized residual plot and some score and f tests for the variance. 
+
+```{r}
+library(olsrr)
+ols_plot_resid_fit(mult_mod)
+ols_test_score(mult_mod)
+ols_test_f(mult_mod)
+```
+
+We see with the residual plot that the residuals are quite nicely randomly distributed about zero, which is a good sign. There do however seem to be clusters in the distribution of the residuals. Furthermore, both the score and F test prove the null hypothesis of homogeneous variance. So, thus far, we can say that our assumptions of linear regression hold. For further confirmation we can check the normality of our residuals with a QQ plot, and check the mean to ensure it is zero.
+
+```{r}
+
+plot(mult_mod, 2)
+mean(mult_mod$residuals)
+
+```
+
+Above we see further confirmation that our assumptions of normally distributed residuals hold, as the residuals fit the theoretical values of normally distiributed residuals pretty well and the mean is quite small, nearly zero. However, there are a few values that do not lie within the normal distribution. These could be outliers in the data. 
+
+
+We should then see how well this model fits with a marginal model plot.
+
+```{r}
+library(car)
+#blue line represents a loess(smoothing) line for the data and the dashed line represents 
+#the model which R fitted
+mmps(mult_mod)
+kable(glance(mult_mod)[,c(1:4)])
+```
+
+All of the marginal model plots show that our model fits the data pretty well, except for the plot of birthweit against premature labors, ptl. This is not surprising as earlier it was shown that in the multiple regression model, ptl becomes insignificant, indicating that something off is happening with this variable, or that it is not a good predictor. Furthermore, the multiple R squared value is only about 0.26. So, although the model fits well and our assumptions of linear regression hold, the model is not doing a good job of explaining all of the variance. 
+
+At this point we can check for any possible outliers or chances of multicollinearity with the combination of Cook's Distance, DFBETAS, and DFFITS. 
+
+```{r}
+
+ols_plot_cooksd_chart(mult_mod)
+ols_plot_dfbetas(mult_mod)
+ols_plot_dffits(mult_mod)
+
+#Note: If you get an error that says invalid graphics state try running dev.off()
+```
+
+What immediately stands out from all of these different kinds of influence plots is the significance of the 94th observation, which comes from the ptl variable. It is a major outlier, which is also interesting for the changes in the significance of the variable to the outcome when switching from a simple to a multiple linear regression model. Furthermore, some of the outliers for history of hypertension are the same for our interaction terms. This may indicate some multicollinearity happening between our interaction terms. Perhaps history of hypertension and race/smoking habits are all related in some way. 
+
+
+
+
+
+
